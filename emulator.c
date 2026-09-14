@@ -1,6 +1,9 @@
 #include <stdint.h>
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#define START_ADDRESS 0x200
 
 typedef struct {
   uint8_t memory[4096];
@@ -15,27 +18,39 @@ typedef struct {
   uint16_t registerI;
 } Chip8;
 
-void init(Chip8* chip) {
-  chip->programCounter = 0x200;
+typedef void (*opcodeFunction) (Chip8* chip8, int16_t opcode);
 
+// Initialize chip
+void initChip(Chip8* chip) {
+  chip->programCounter = START_ADDRESS;
 }
 
 // Loads ROM from given path into Chip8
-void loadROM(Chip8* chip, char* fileName) {
+void loadROM(Chip8* chip8, char* fileName) {
   FILE* rom = fopen(fileName, "rb"); 
   if (!rom) {
     printf("Error loading ROM: %s\n", fileName);
     exit(1);
   }
-  fread(&chip->memory[0x200], 1, sizeof(chip->memory), rom);
+  fread(&chip8->memory[START_ADDRESS], 1, sizeof(chip8->memory) - START_ADDRESS, rom);
   fclose(rom);
 }
 
-// Debug
-void printROM(Chip8* chip) {
-  for (int i = 0; i < sizeof(chip->memory); i++) {
-    printf("%d", chip->memory[i+0x200]);
-  }
+// Clears the display
+void opcode_00E0(Chip8* chip8, int16_t opcode) {
+  memset(chip8->display, 0, sizeof(chip8->display)); 
+}
+
+void opcode_00EE(Chip8* chip8, int16_t opcode) {
+}
+
+// Emulate a CPU cycle
+void cycle(Chip8* chip8) {
+  // Fetch
+  uint16_t opcode = (chip8->memory[chip8->programCounter] << 8) | chip8->memory[(chip8->programCounter) + 1];
+  chip8->programCounter += 2;
+  // Decode
+  // Execute
 }
 
 int main(int argc, char *argv[])
@@ -45,7 +60,9 @@ int main(int argc, char *argv[])
     exit(1);
   }
 
-  Chip8 c;
-  loadROM(&c, argv[1]);
+  Chip8 chip8;
+  initChip(&chip8);
+  loadROM(&chip8, argv[1]);
+  cycle(&chip8);
   return 1;
 }
