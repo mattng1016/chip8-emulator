@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define START_ADDRESS 0x200
 
@@ -15,8 +16,27 @@ typedef struct {
   uint16_t programCounter; // Stores the current executing address
   uint8_t stackPointer; // Point to topmost level of the stack
   uint16_t stack[16];
-  uint16_t registerI;
+  uint16_t I;
 } Chip8;
+
+uint8_t sprite[80] = {
+  0xF0, 0x90, 0x90, 0x90, 0xF0,
+  0x20, 0x60, 0x20, 0x20, 0x70, 
+  0xF0, 0x10, 0xF0, 0x80, 0xF0, 
+  0xF0, 0x10, 0xF0, 0x10, 0xF0, 
+  0x90, 0x90, 0xF0, 0x10, 0x10, 
+  0xF0, 0x80, 0xF0, 0x10, 0xF0, 
+  0xF0, 0x80, 0xF0, 0x90, 0xF0, 
+  0xF0, 0x10, 0x20, 0x40, 0x04, 
+  0xF0, 0x90, 0xF0, 0x90, 0xF0, 
+  0xF0, 0x90, 0xF0, 0x10, 0xF0, 
+  0xF0, 0x90, 0xF0, 0x90, 0x90, 
+  0xE0, 0x90, 0xE0, 0x90, 0xE0, 
+  0xF0, 0x90, 0x80, 0x80, 0xF0, 
+  0xE0, 0x90, 0x90, 0x90, 0xE0, 
+  0xF0, 0x80, 0xF0, 0x80, 0xF0, 
+  0xF0, 0x80, 0xF0, 0x80, 0x80
+};
 
 typedef void (*opcodeFunction) (Chip8* chip8, int16_t opcode);
 
@@ -87,70 +107,133 @@ void opcode_5xy0(Chip8* chip8, int16_t opcode) {
   }
 }
 
+// Set Vx = kk
 void opcode_6xkk(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t kk = opcode & 0xFF;
+  chip8->V[x] = kk; 
 }
 
+// Set Vx = Vx + kk
 void opcode_7xkk(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t kk = opcode & 0xFF;
+  chip8->V[x] += kk; 
 }
 
+// Set Vx = Vy
 void opcode_8xy0(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t y = (opcode >> 4) & 0xF;
+  chip8->V[x] = chip8->V[y]; 
 }
 
+// Set Vx = Vx OR Vy
 void opcode_8xy1(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t y = (opcode >> 4) & 0xF;
+  chip8->V[x] |= chip8->V[y]; 
 }
 
-
+// Set Vx = Vx AND Vy
 void opcode_8xy2(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t y = (opcode >> 4) & 0xF;
+  chip8->V[x] &= chip8->V[y]; 
 }
 
+// Set Vx = Vx XOR Vy
 void opcode_8xy3(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t y = (opcode >> 4) & 0xF;
+  chip8->V[x] ^= chip8->V[y]; 
 }
 
+// Set Vx = Vx + Vy, set VF = carry
 void opcode_8xy4(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t y = (opcode >> 4) & 0xF;
+  if ((chip8->V[x] + chip8->V[y]) > 255) {
+    chip8->V[0xF] = 1;
+  } else chip8->V[0xF] = 0;
+  chip8->V[x] += chip8->V[y];
 }
 
+// Set Vx = Vx - Vy, set VF = NOT borrow
 void opcode_8xy5(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t y = (opcode >> 4) & 0xF;
+  if (chip8->V[x] > chip8->V[y]) {
+    chip8->V[0xF] = 1;
+  } else chip8->V[0xF] = 0;
+  chip8->V[x] = chip8->V[x] - chip8->V[y];
 }
 
+// Set Vx = Vx SHR 1
 void opcode_8xy6(Chip8* chip8, int16_t opcode) {
-
+ uint16_t x = (opcode >> 8) & 0xF;
+ if (chip8->V[x] & 1) {
+    chip8->V[0xF] = 1;
+  } else chip8->V[0xf] = 0;
+  chip8->V[x] /= 2;
 }
 
+// Set Vx = Vy - Vx, set VF = NOT borrow
 void opcode_8xy7(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t y = (opcode >> 4) & 0xF;
+  if (chip8->V[y] > chip8->V[x]) {
+    chip8->V[0xF] = 1;
+  } else chip8->V[0xF] = 0; 
+  chip8->V[x] = chip8->V[y] - chip8->V[x];
 }
 
+// Set Vx = Vx SHL 1 
 void opcode_8xyE(Chip8* chip8, int16_t opcode) {
-
+ uint16_t x = (opcode >> 8) & 0xF;
+ if ((chip8->V[x] >> 15) & 1) {
+    chip8->V[0xF] = 1;
+  } else chip8->V[0xf] = 0;
+  chip8->V[x] *= 2;
 }
 
+// Skip next instruction if Vx != Vy
 void opcode_9xy0(Chip8* chip8, int16_t opcode) {
-
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t y = (opcode >> 4) & 0xF;
+  if (chip8->V[x] != chip8->V[y]) {
+    chip8->programCounter += 2;
+  } 
 }
 
+// Set I to nnn
 void opcode_Annn(Chip8* chip8, int16_t opcode) {
-
+  chip8->I = opcode & 0x0FFF;
 }
 
+// Jump to location nnn + V0
 void opcode_Bnnn(Chip8* chip8, int16_t opcode) {
-
+  chip8->programCounter = (opcode & 0x0FFF) + chip8->V[0];
 }
 
+// Set Vx = random byte AND kk
 void opcode_Cxkk(Chip8* chip8, int16_t opcode) {
-
+  srand(time(NULL));
+  uint8_t r = rand() % 255;
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t kk = opcode & 0xFF;
+  chip8->V[x] = r & kk; 
 }
 
-
+// Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision
 void opcode_Dxyn(Chip8* chip8, int16_t opcode) {
-
+  uint8_t n = opcode & 0xF;
+  uint16_t x = (opcode >> 8) & 0xF;
+  uint16_t y = (opcode >> 4) & 0xF;
+  chip8->V[0xF] = 0;
+  for (int i = 0; i < n; i++) {
+    uint8_t sprite = chip8->memory[chip8->I + i];
+  }
 }
 
 
@@ -214,11 +297,11 @@ void cycle(Chip8* chip8) {
   uint16_t opcode = (chip8->memory[chip8->programCounter] << 8) | chip8->memory[(chip8->programCounter) + 1];
   chip8->programCounter += 2;
   // Decode
-  printf("%x\n", chip8->programCounter);
-  chip8->V[0xB] = 0xA;
-  chip8->V[0xC] = 0xA;
-  opcode_5xy0(chip8, 0xABA0);
-  printf("%x", chip8->programCounter);
+  //printf("%x\n", chip8->programCounter);
+  chip8->V[0xA] = 0xAB;
+  //printf("%x\n", chip8->V[0xA]);
+  opcode_Annn(chip8, 0xA3C2);
+  printf("%x", chip8->I);
   // Execute
 }
 
