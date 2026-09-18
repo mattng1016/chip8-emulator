@@ -1,2 +1,4 @@
 emulator
 spaceinvader
+build/
+compile_commands.json
