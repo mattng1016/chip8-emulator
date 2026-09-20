@@ -16,7 +16,7 @@ typedef struct {
   uint8_t memory[4096];
   uint8_t V[16];
   uint8_t keyboard[16];
-  uint32_t display[64][32];
+  uint32_t display[32][64];
   uint8_t delayTimer;
   uint8_t soundTimer;
   uint16_t programCounter; // Stores the current executing address
@@ -178,7 +178,7 @@ void opcode_8xy6(Chip8 *chip8, int16_t opcode) {
   if (chip8->V[x] & 1) {
     chip8->V[0xF] = 1;
   } else
-    chip8->V[0xf] = 0;
+    chip8->V[0xF] = 0;
   chip8->V[x] /= 2;
 }
 
@@ -199,7 +199,7 @@ void opcode_8xyE(Chip8 *chip8, int16_t opcode) {
   if ((chip8->V[x] >> 15) & 1) {
     chip8->V[0xF] = 1;
   } else
-    chip8->V[0xf] = 0;
+    chip8->V[0xF] = 0;
   chip8->V[x] *= 2;
 }
 
@@ -277,7 +277,16 @@ void opcode_Fx07(Chip8 *chip8, int16_t opcode) {
 }
 
 // Wait for a key press, store the value of the key in Vx
-void opcode_Fx0A(Chip8 *chip8, int16_t opcode) {}
+void opcode_Fx0A(Chip8 *chip8, int16_t opcode) {
+  uint8_t x = (opcode >> 8) & 0xF;
+  for (int i = 0; i <= 0xF; i++) {
+    if (chip8->keyboard[i]) {
+      chip8->V[x] = i;
+      return;
+    }
+  } 
+  chip8->programCounter -= 2;
+}
 
 // Set delay timer = Vx
 void opcode_Fx15(Chip8 *chip8, int16_t opcode) {
@@ -305,7 +314,15 @@ void opcode_Fx29(Chip8 *chip8, int16_t opcode) {
 }
 
 // Store BCD representation of Vx in memory location I, I + 1, and I + 2
-void opcode_Fx33(Chip8 *chip8, int16_t opcode) {}
+void opcode_Fx33(Chip8 *chip8, int16_t opcode) {
+  uint8_t x = (opcode >> 8) & 0xF;
+  uint8_t value = chip8->V[x];
+  chip8->memory[chip8->I+2] = value % 10; // Single digit
+  value /= 10;
+  chip8->memory[chip8->I+2] = value % 10; // Ten digit
+  value /= 10;
+  chip8->memory[chip8->I+2] = value % 10; // Hundred digit
+}
 
 // Store register V0 through Vx in memory starting at location I
 void opcode_Fx55(Chip8 *chip8, int16_t opcode) {
@@ -342,15 +359,7 @@ void cycle(Chip8 *chip8) {
                     chip8->memory[(chip8->programCounter) + 1];
   chip8->programCounter += 2;
   // Decode
-  chip8->V[0] = 0x03;
-  chip8->V[1] = 0x04;
-  chip8->I = 0x208;
-  for (int i = 0; i < 5; i++) {
-    chip8->memory[0x208 + i] = sprite[i + 5];
-  }
-  opcode_Dxyn(chip8, 0xD015);
-  test(chip8);
-  // Execute
+ // Execute
 }
 
 int main(int argc, char *argv[]) {
@@ -369,6 +378,15 @@ int main(int argc, char *argv[]) {
   SDL_Renderer *renderer = SDL_CreateRenderer(window, NULL);
 
   cycle(&chip8);
+
+  chip8.V[0] = 0x0;
+  chip8.V[1] = 0x5;
+  chip8.I = 0x208;
+  for (int i = 0; i < 5; i++) {
+    chip8.memory[0x208 + i] = sprite[i];
+  }
+  opcode_Dxyn(&chip8, 0xD015);
+  test(&chip8);
 
   bool running = true;
   while (running) {
