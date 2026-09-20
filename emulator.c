@@ -34,7 +34,13 @@ uint8_t sprite[80] = {
     0xF0, 0x90, 0x80, 0x80, 0xF0, 0xE0, 0x90, 0x90, 0x90, 0xE0, 0xF0, 0x80,
     0xF0, 0x80, 0xF0, 0xF0, 0x80, 0xF0, 0x80, 0x80};
 
+// Function pointer stuff
 typedef void (*opcodeFunction)(Chip8 *chip8, int16_t opcode);
+opcodeFunction table[16];
+opcodeFunction table0[0x100];
+opcodeFunction table8[16];
+opcodeFunction tableE[0x100];
+opcodeFunction tableF[0x100];
 
 // Initialize chip
 void initChip(Chip8 *chip8) {
@@ -284,7 +290,7 @@ void opcode_Fx0A(Chip8 *chip8, int16_t opcode) {
       chip8->V[x] = i;
       return;
     }
-  } 
+  }
   chip8->programCounter -= 2;
 }
 
@@ -317,11 +323,11 @@ void opcode_Fx29(Chip8 *chip8, int16_t opcode) {
 void opcode_Fx33(Chip8 *chip8, int16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   uint8_t value = chip8->V[x];
-  chip8->memory[chip8->I+2] = value % 10; // Single digit
+  chip8->memory[chip8->I + 2] = value % 10; // Single digit
   value /= 10;
-  chip8->memory[chip8->I+2] = value % 10; // Ten digit
+  chip8->memory[chip8->I + 2] = value % 10; // Ten digit
   value /= 10;
-  chip8->memory[chip8->I+2] = value % 10; // Hundred digit
+  chip8->memory[chip8->I + 2] = value % 10; // Hundred digit
 }
 
 // Store register V0 through Vx in memory starting at location I
@@ -340,6 +346,90 @@ void opcode_Fx65(Chip8 *chip8, int16_t opcode) {
   }
 }
 
+// Error
+void opcode_err(Chip8 *chip8, int16_t opcode) {
+  printf("Error opcode: 0x%04x\n", opcode);
+}
+
+// Function dispatchers
+void d_0(Chip8 *chip8, int16_t opcode) {
+  table0[opcode & 0x00FF](chip8, opcode);
+}
+
+void d_8(Chip8 *chip8, int16_t opcode) {
+  table8[opcode & 0x000F](chip8, opcode);
+}
+
+void d_E(Chip8 *chip8, int16_t opcode) {
+  tableE[opcode & 0x00FF](chip8, opcode);
+}
+
+void d_F(Chip8 *chip8, int16_t opcode) {
+  tableF[opcode & 0x00FF](chip8, opcode);
+}
+
+// Initialize function table
+void initTables(void) {
+  for (int i = 0; i < 16; i++) {
+    table[i] = opcode_err;
+  }
+  table[0x0] = d_0;
+  table[0x1] = opcode_1nnn;
+  table[0x2] = opcode_2nnn;
+  table[0x3] = opcode_3xkk;
+  table[0x4] = opcode_4xkk;
+  table[0x5] = opcode_5xy0;
+  table[0x6] = opcode_6xkk;
+  table[0x7] = opcode_7xkk;
+  table[0x8] = d_8;
+  table[0x9] = opcode_9xy0;
+  table[0xA] = opcode_Annn;
+  table[0xB] = opcode_Bnnn;
+  table[0xC] = opcode_Cxkk;
+  table[0xD] = opcode_Dxyn;
+  table[0xE] = d_E;
+  table[0xF] = d_F;
+
+  for (int i = 0; i < 0x100; i++) {
+    table0[i] = opcode_err;
+  }
+  table0[0xE0] = opcode_00E0;
+  table0[0xEE] = opcode_00EE;
+
+  for (int i = 0; i < 16; i++) {
+    table8[i] = opcode_err;
+  }
+  table8[0x0] = opcode_8xy0;
+  table8[0x1] = opcode_8xy1;
+  table8[0x2] = opcode_8xy2;
+  table8[0x3] = opcode_8xy3;
+  table8[0x4] = opcode_8xy4;
+  table8[0x5] = opcode_8xy5;
+  table8[0x6] = opcode_8xy6;
+  table8[0x7] = opcode_8xy7;
+  table8[0xE] = opcode_8xyE;
+
+  for (int i = 0; i < 0x100; i++) {
+    tableE[i] = opcode_err;
+  }
+  tableE[0x9E] = opcode_Ex9E;
+  tableE[0xA1] = opcode_ExA1;
+
+  for (int i = 0; i < 0x100; i++) {
+    tableF[i] = opcode_err;
+  }
+  tableF[0x07] = opcode_Fx07;
+  tableF[0x0A] = opcode_Fx0A;
+  tableF[0x15] = opcode_Fx15;
+  tableF[0x18] = opcode_Fx18;
+  tableF[0x1E] = opcode_Fx1E;
+  tableF[0x29] = opcode_Fx29;
+  tableF[0x33] = opcode_Fx33;
+  tableF[0x55] = opcode_Fx55;
+  tableF[0x65] = opcode_Fx65;
+}
+
+// Test
 void test(Chip8 *chip8) {
   for (int i = 0; i < 32; i++) {
     for (int j = 0; j < 64; j++) {
@@ -358,8 +448,9 @@ void cycle(Chip8 *chip8) {
   uint16_t opcode = (chip8->memory[chip8->programCounter] << 8) |
                     chip8->memory[(chip8->programCounter) + 1];
   chip8->programCounter += 2;
-  // Decode
- // Execute
+  // Decode and execute
+  uint8_t f = (opcode & 0xF000) >> 12;
+  table[f](chip8, opcode);
 }
 
 int main(int argc, char *argv[]) {
@@ -370,6 +461,7 @@ int main(int argc, char *argv[]) {
 
   Chip8 chip8;
   initChip(&chip8);
+  initTables();
   loadROM(&chip8, argv[1]);
 
   SDL_Init(SDL_INIT_VIDEO);
@@ -399,7 +491,6 @@ int main(int argc, char *argv[]) {
       }
     }
   }
-
 
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
