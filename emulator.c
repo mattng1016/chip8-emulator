@@ -471,15 +471,6 @@ int main(int argc, char *argv[]) {
 
   cycle(&chip8);
 
-  chip8.V[0] = 0x0;
-  chip8.V[1] = 0x5;
-  chip8.I = 0x208;
-  for (int i = 0; i < 5; i++) {
-    chip8.memory[0x208 + i] = sprite[i];
-  }
-  opcode_Dxyn(&chip8, 0xD015);
-  test(&chip8);
-
   bool running = true;
   while (running) {
     SDL_Event event;
@@ -488,6 +479,110 @@ int main(int argc, char *argv[]) {
       case SDL_EVENT_QUIT:
         running = false;
         break;
+      case SDL_EVENT_KEY_DOWN:
+        switch (event.key.key) {
+        case SDLK_1:
+          chip8.keyboard[1] = 1;
+          break;
+        case SDLK_2:
+          chip8.keyboard[2] = 1;
+          break;
+        case SDLK_3:
+          chip8.keyboard[3] = 1;
+          break;
+        case SDLK_4:
+          chip8.keyboard[0xC] = 1;
+          break;
+        case SDLK_Q:
+          chip8.keyboard[4] = 1;
+          break;
+        case SDLK_W:
+          chip8.keyboard[5] = 1;
+          break;
+        case SDLK_E:
+          chip8.keyboard[6] = 1;
+          break;
+        case SDLK_R:
+          chip8.keyboard[0xC] = 1;
+          break;
+        case SDLK_A:
+          chip8.keyboard[7] = 1;
+          break;
+        case SDLK_S:
+          chip8.keyboard[8] = 1;
+          break;
+        case SDLK_D:
+          chip8.keyboard[9] = 1;
+          break;
+        case SDLK_F:
+          chip8.keyboard[0xE] = 1;
+          break;
+        case SDLK_Z:
+          chip8.keyboard[0xA] = 1;
+          break;
+        case SDLK_X:
+          chip8.keyboard[0] = 1;
+          break;
+        case SDLK_C:
+          chip8.keyboard[0xB] = 1;
+          break;
+        case SDLK_V:
+          chip8.keyboard[0xF] = 1;
+          break;
+        case SDLK_ESCAPE:
+          running = false;
+        }
+      case SDL_EVENT_KEY_UP:
+        switch (event.key.key) {
+        case SDLK_1:
+          chip8.keyboard[1] = 0;
+          break;
+        case SDLK_2:
+          chip8.keyboard[2] = 0;
+          break;
+        case SDLK_3:
+          chip8.keyboard[3] = 0;
+          break;
+        case SDLK_4:
+          chip8.keyboard[0xC] = 0;
+          break;
+        case SDLK_Q:
+          chip8.keyboard[4] = 0;
+          break;
+        case SDLK_W:
+          chip8.keyboard[5] = 0;
+          break;
+        case SDLK_E:
+          chip8.keyboard[6] = 0;
+          break;
+        case SDLK_R:
+          chip8.keyboard[0xC] = 0;
+          break;
+        case SDLK_A:
+          chip8.keyboard[7] = 0;
+          break;
+        case SDLK_S:
+          chip8.keyboard[8] = 0;
+          break;
+        case SDLK_D:
+          chip8.keyboard[9] = 0;
+          break;
+        case SDLK_F:
+          chip8.keyboard[0xE] = 0;
+          break;
+        case SDLK_Z:
+          chip8.keyboard[0xA] = 0;
+          break;
+        case SDLK_X:
+          chip8.keyboard[0] = 0;
+          break;
+        case SDLK_C:
+          chip8.keyboard[0xB] = 0;
+          break;
+        case SDLK_V:
+          chip8.keyboard[0xF] = 0;
+          break;
+        }
       }
     }
   }
