@@ -8,6 +8,8 @@
 #include <time.h>
 
 #define START_ADDRESS 0x200
+#define CYCLE_INTERVAL (1000.0 / 540.0)
+#define TIMER_INTERVAL (1000.0 / 60.0)
 
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
@@ -35,7 +37,7 @@ uint8_t sprite[80] = {
     0xF0, 0x80, 0xF0, 0xF0, 0x80, 0xF0, 0x80, 0x80};
 
 // Function pointer stuff
-typedef void (*opcodeFunction)(Chip8 *chip8, int16_t opcode);
+typedef void (*opcodeFunction)(Chip8 *chip8, uint16_t opcode);
 opcodeFunction table[16];
 opcodeFunction table0[0x100];
 opcodeFunction table8[16];
@@ -44,11 +46,12 @@ opcodeFunction tableF[0x100];
 
 // Initialize chip
 void initChip(Chip8 *chip8) {
+  memset(chip8, 0, sizeof(Chip8));
+
   chip8->programCounter = START_ADDRESS;
   for (int i = 0; i < sizeof(sprite); i++) {
     chip8->memory[i] = sprite[i];
   }
-  memset(chip8->display, 0, sizeof(chip8->display));
 }
 
 // Loads ROM from given path into Chip8
@@ -64,31 +67,31 @@ void loadROM(Chip8 *chip8, char *fileName) {
 }
 
 // Clears the display
-void opcode_00E0(Chip8 *chip8, int16_t opcode) {
+void opcode_00E0(Chip8 *chip8, uint16_t opcode) {
   memset(chip8->display, 0, sizeof(chip8->display));
 }
 
 // Returns from subroutine
-void opcode_00EE(Chip8 *chip8, int16_t opcode) {
+void opcode_00EE(Chip8 *chip8, uint16_t opcode) {
   chip8->programCounter = chip8->stack[chip8->stackPointer];
   chip8->stackPointer--;
 }
 
 // Jump to location nnn
-void opcode_1nnn(Chip8 *chip8, int16_t opcode) {
+void opcode_1nnn(Chip8 *chip8, uint16_t opcode) {
   uint16_t address = opcode & 0xFFF;
   chip8->programCounter = address;
 }
 
 // Call subroutine at nnn
-void opcode_2nnn(Chip8 *chip8, int16_t opcode) {
+void opcode_2nnn(Chip8 *chip8, uint16_t opcode) {
   chip8->stackPointer++;
   chip8->stack[chip8->stackPointer] = chip8->programCounter;
   chip8->programCounter = opcode & 0xFFF;
 }
 
 // Skip next instruction if Vx == kk
-void opcode_3xkk(Chip8 *chip8, int16_t opcode) {
+void opcode_3xkk(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t kk = opcode & 0xFF;
   if (chip8->V[x] == kk) {
@@ -97,7 +100,7 @@ void opcode_3xkk(Chip8 *chip8, int16_t opcode) {
 }
 
 // Skip next instruction if Vx != kk
-void opcode_4xkk(Chip8 *chip8, int16_t opcode) {
+void opcode_4xkk(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t kk = opcode & 0xFF;
   if (chip8->V[x] != kk) {
@@ -106,7 +109,7 @@ void opcode_4xkk(Chip8 *chip8, int16_t opcode) {
 }
 
 // Skip next instruction if Vx == Vy
-void opcode_5xy0(Chip8 *chip8, int16_t opcode) {
+void opcode_5xy0(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
   if (chip8->V[x] == chip8->V[y]) {
@@ -115,71 +118,76 @@ void opcode_5xy0(Chip8 *chip8, int16_t opcode) {
 }
 
 // Set Vx = kk
-void opcode_6xkk(Chip8 *chip8, int16_t opcode) {
+void opcode_6xkk(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t kk = opcode & 0xFF;
   chip8->V[x] = kk;
 }
 
 // Set Vx = Vx + kk
-void opcode_7xkk(Chip8 *chip8, int16_t opcode) {
+void opcode_7xkk(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t kk = opcode & 0xFF;
   chip8->V[x] += kk;
 }
 
 // Set Vx = Vy
-void opcode_8xy0(Chip8 *chip8, int16_t opcode) {
+void opcode_8xy0(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
   chip8->V[x] = chip8->V[y];
 }
 
 // Set Vx = Vx OR Vy
-void opcode_8xy1(Chip8 *chip8, int16_t opcode) {
+void opcode_8xy1(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
   chip8->V[x] |= chip8->V[y];
+  chip8->V[0xF] = 0;
 }
 
 // Set Vx = Vx AND Vy
-void opcode_8xy2(Chip8 *chip8, int16_t opcode) {
+void opcode_8xy2(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
   chip8->V[x] &= chip8->V[y];
+  chip8->V[0xF] = 0;
 }
 
 // Set Vx = Vx XOR Vy
-void opcode_8xy3(Chip8 *chip8, int16_t opcode) {
+void opcode_8xy3(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
   chip8->V[x] ^= chip8->V[y];
+  chip8->V[0xF] = 0;
 }
 
 // Set Vx = Vx + Vy, set VF = carry
-void opcode_8xy4(Chip8 *chip8, int16_t opcode) {
+void opcode_8xy4(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
-  if ((chip8->V[x] + chip8->V[y]) > 255) {
+  uint16_t temp = chip8->V[x] + chip8->V[y];
+  chip8->V[x] = temp & 0xFF;
+  if (temp > 255) {
     chip8->V[0xF] = 1;
   } else
     chip8->V[0xF] = 0;
-  chip8->V[x] += chip8->V[y];
 }
 
 // Set Vx = Vx - Vy, set VF = NOT borrow
-void opcode_8xy5(Chip8 *chip8, int16_t opcode) {
+void opcode_8xy5(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
-  if (chip8->V[x] > chip8->V[y]) {
+  uint16_t temp = chip8->V[x] - chip8->V[y];
+  chip8->V[x] = temp;
+  if (chip8->V[x] >= chip8->V[y]) {
     chip8->V[0xF] = 1;
   } else
     chip8->V[0xF] = 0;
-  chip8->V[x] = chip8->V[x] - chip8->V[y];
 }
 
 // Set Vx = Vx SHR 1
-void opcode_8xy6(Chip8 *chip8, int16_t opcode) {
+void opcode_8xy6(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   if (chip8->V[x] & 1) {
     chip8->V[0xF] = 1;
@@ -189,28 +197,26 @@ void opcode_8xy6(Chip8 *chip8, int16_t opcode) {
 }
 
 // Set Vx = Vy - Vx, set VF = NOT borrow
-void opcode_8xy7(Chip8 *chip8, int16_t opcode) {
+void opcode_8xy7(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
-  if (chip8->V[y] > chip8->V[x]) {
+  uint16_t temp = chip8->V[y] - chip8->V[x];
+  chip8->V[x] = temp;
+  if (temp >= 0) {
     chip8->V[0xF] = 1;
   } else
     chip8->V[0xF] = 0;
-  chip8->V[x] = chip8->V[y] - chip8->V[x];
 }
 
 // Set Vx = Vx SHL 1
-void opcode_8xyE(Chip8 *chip8, int16_t opcode) {
+void opcode_8xyE(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
-  if ((chip8->V[x] >> 15) & 1) {
-    chip8->V[0xF] = 1;
-  } else
-    chip8->V[0xF] = 0;
-  chip8->V[x] *= 2;
+  chip8->V[0xF] = (chip8->V[x] & 0x80) >> 7;
+  chip8->V[x] <<= 1;
 }
 
 // Skip next instruction if Vx != Vy
-void opcode_9xy0(Chip8 *chip8, int16_t opcode) {
+void opcode_9xy0(Chip8 *chip8, uint16_t opcode) {
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
   if (chip8->V[x] != chip8->V[y]) {
@@ -219,15 +225,15 @@ void opcode_9xy0(Chip8 *chip8, int16_t opcode) {
 }
 
 // Set I to nnn
-void opcode_Annn(Chip8 *chip8, int16_t opcode) { chip8->I = opcode & 0x0FFF; }
+void opcode_Annn(Chip8 *chip8, uint16_t opcode) { chip8->I = opcode & 0x0FFF; }
 
 // Jump to location nnn + V0
-void opcode_Bnnn(Chip8 *chip8, int16_t opcode) {
+void opcode_Bnnn(Chip8 *chip8, uint16_t opcode) {
   chip8->programCounter = (opcode & 0x0FFF) + chip8->V[0];
 }
 
 // Set Vx = random byte AND kk
-void opcode_Cxkk(Chip8 *chip8, int16_t opcode) {
+void opcode_Cxkk(Chip8 *chip8, uint16_t opcode) {
   srand(time(NULL));
   uint8_t r = rand() % 255;
   uint16_t x = (opcode >> 8) & 0xF;
@@ -237,7 +243,7 @@ void opcode_Cxkk(Chip8 *chip8, int16_t opcode) {
 
 // Display n-byte sprite starting at memory location I at (Vx, Vy), set VF =
 // collision
-void opcode_Dxyn(Chip8 *chip8, int16_t opcode) {
+void opcode_Dxyn(Chip8 *chip8, uint16_t opcode) {
   uint8_t n = opcode & 0xF;
   uint16_t x = (opcode >> 8) & 0xF;
   uint16_t y = (opcode >> 4) & 0xF;
@@ -259,7 +265,7 @@ void opcode_Dxyn(Chip8 *chip8, int16_t opcode) {
 }
 
 // Skip next instruction if key with value of Vx is pressed
-void opcode_Ex9E(Chip8 *chip8, int16_t opcode) {
+void opcode_Ex9E(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   uint8_t key = chip8->V[x];
   if (chip8->keyboard[key]) {
@@ -268,7 +274,7 @@ void opcode_Ex9E(Chip8 *chip8, int16_t opcode) {
 }
 
 // Skip next instruction if key with the value of Vx is not pressed
-void opcode_ExA1(Chip8 *chip8, int16_t opcode) {
+void opcode_ExA1(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   uint8_t key = chip8->V[x];
   if (!chip8->keyboard[key]) {
@@ -277,13 +283,13 @@ void opcode_ExA1(Chip8 *chip8, int16_t opcode) {
 }
 
 // Set Vx = delay timer value
-void opcode_Fx07(Chip8 *chip8, int16_t opcode) {
+void opcode_Fx07(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   chip8->V[x] = chip8->delayTimer;
 }
 
 // Wait for a key press, store the value of the key in Vx
-void opcode_Fx0A(Chip8 *chip8, int16_t opcode) {
+void opcode_Fx0A(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   for (int i = 0; i <= 0xF; i++) {
     if (chip8->keyboard[i]) {
@@ -295,76 +301,78 @@ void opcode_Fx0A(Chip8 *chip8, int16_t opcode) {
 }
 
 // Set delay timer = Vx
-void opcode_Fx15(Chip8 *chip8, int16_t opcode) {
+void opcode_Fx15(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   chip8->delayTimer = chip8->V[x];
 }
 
 // Set sound timer = Vx
-void opcode_Fx18(Chip8 *chip8, int16_t opcode) {
+void opcode_Fx18(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   chip8->soundTimer = chip8->V[x];
 }
 
 // Set I = I + Vx
-void opcode_Fx1E(Chip8 *chip8, int16_t opcode) {
+void opcode_Fx1E(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   chip8->I += chip8->V[x];
 }
 
 // Set I = location of sprite for digit Vx
-void opcode_Fx29(Chip8 *chip8, int16_t opcode) {
+void opcode_Fx29(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   uint8_t sprite = chip8->V[x];
   chip8->I = 5 * sprite;
 }
 
 // Store BCD representation of Vx in memory location I, I + 1, and I + 2
-void opcode_Fx33(Chip8 *chip8, int16_t opcode) {
+void opcode_Fx33(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
   uint8_t value = chip8->V[x];
   chip8->memory[chip8->I + 2] = value % 10; // Single digit
   value /= 10;
-  chip8->memory[chip8->I + 2] = value % 10; // Ten digit
+  chip8->memory[chip8->I + 1] = value % 10; // Ten digit
   value /= 10;
-  chip8->memory[chip8->I + 2] = value % 10; // Hundred digit
+  chip8->memory[chip8->I] = value % 10; // Hundred digit
 }
 
 // Store register V0 through Vx in memory starting at location I
-void opcode_Fx55(Chip8 *chip8, int16_t opcode) {
+void opcode_Fx55(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
-  for (int i = 0; i < x; i++) {
+  for (int i = 0; i <= x; i++) {
     chip8->memory[(chip8->I) + i] = chip8->V[i];
   }
+  chip8->I += x + 1;
 }
 
 // Read register V0 through Vx from memory starting at location I
-void opcode_Fx65(Chip8 *chip8, int16_t opcode) {
+void opcode_Fx65(Chip8 *chip8, uint16_t opcode) {
   uint8_t x = (opcode >> 8) & 0xF;
-  for (int i = 0; i < x; i++) {
+  for (int i = 0; i <= x; i++) {
     chip8->V[i] = chip8->memory[(chip8->I) + i];
   }
+  chip8->I += x + 1;
 }
 
 // Error
-void opcode_err(Chip8 *chip8, int16_t opcode) {
+void opcode_err(Chip8 *chip8, uint16_t opcode) {
   printf("Error opcode: 0x%04x\n", opcode);
 }
 
 // Function dispatchers
-void d_0(Chip8 *chip8, int16_t opcode) {
+void d_0(Chip8 *chip8, uint16_t opcode) {
   table0[opcode & 0x00FF](chip8, opcode);
 }
 
-void d_8(Chip8 *chip8, int16_t opcode) {
+void d_8(Chip8 *chip8, uint16_t opcode) {
   table8[opcode & 0x000F](chip8, opcode);
 }
 
-void d_E(Chip8 *chip8, int16_t opcode) {
+void d_E(Chip8 *chip8, uint16_t opcode) {
   tableE[opcode & 0x00FF](chip8, opcode);
 }
 
-void d_F(Chip8 *chip8, int16_t opcode) {
+void d_F(Chip8 *chip8, uint16_t opcode) {
   tableF[opcode & 0x00FF](chip8, opcode);
 }
 
@@ -449,8 +457,28 @@ void cycle(Chip8 *chip8) {
                     chip8->memory[(chip8->programCounter) + 1];
   chip8->programCounter += 2;
   // Decode and execute
+  printf("PC: 0x%04x -> opcode: 0x%04x\n", chip8->programCounter - 2, opcode);
   uint8_t f = (opcode & 0xF000) >> 12;
   table[f](chip8, opcode);
+}
+
+// Renders renderer based on display array
+void renderScreen(Chip8 *chip8, SDL_Renderer *renderer) {
+  SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+  SDL_RenderClear(renderer);
+
+  SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+  int scaleX = 900 / 64;
+  int scaleY = 640 / 32;
+  for (int i = 0; i < 32; i++) {
+    for (int j = 0; j < 64; j++) {
+      if (chip8->display[i][j] != 0) {
+        SDL_FRect rect = {j * scaleX, i * scaleY, scaleX, scaleY};
+        SDL_RenderFillRect(renderer, &rect);
+      }
+    }
+  }
+  SDL_RenderPresent(renderer);
 }
 
 int main(int argc, char *argv[]) {
@@ -463,13 +491,13 @@ int main(int argc, char *argv[]) {
   initChip(&chip8);
   initTables();
   loadROM(&chip8, argv[1]);
-
   SDL_Init(SDL_INIT_VIDEO);
   SDL_Window *window =
       SDL_CreateWindow("Chip-8 Emulator", 900, 640, SDL_WINDOW_RESIZABLE);
   SDL_Renderer *renderer = SDL_CreateRenderer(window, NULL);
 
-  cycle(&chip8);
+  double lastCycleTime = SDL_GetTicks();
+  double lastTimeTimer = SDL_GetTicks();
 
   bool running = true;
   while (running) {
@@ -503,7 +531,7 @@ int main(int argc, char *argv[]) {
           chip8.keyboard[6] = 1;
           break;
         case SDLK_R:
-          chip8.keyboard[0xC] = 1;
+          chip8.keyboard[0xD] = 1;
           break;
         case SDLK_A:
           chip8.keyboard[7] = 1;
@@ -532,6 +560,7 @@ int main(int argc, char *argv[]) {
         case SDLK_ESCAPE:
           running = false;
         }
+        break;
       case SDL_EVENT_KEY_UP:
         switch (event.key.key) {
         case SDLK_1:
@@ -556,7 +585,7 @@ int main(int argc, char *argv[]) {
           chip8.keyboard[6] = 0;
           break;
         case SDLK_R:
-          chip8.keyboard[0xC] = 0;
+          chip8.keyboard[0xD] = 0;
           break;
         case SDLK_A:
           chip8.keyboard[7] = 0;
@@ -583,7 +612,24 @@ int main(int argc, char *argv[]) {
           chip8.keyboard[0xF] = 0;
           break;
         }
+        break;
       }
+    }
+
+    double currentTime = SDL_GetTicks();
+
+    if (currentTime - lastCycleTime >= CYCLE_INTERVAL) {
+      cycle(&chip8);
+      lastCycleTime = currentTime;
+    }
+
+    if (currentTime - lastTimeTimer >= TIMER_INTERVAL) {
+      if (chip8.delayTimer > 0)
+        chip8.delayTimer--;
+      if (chip8.soundTimer > 0)
+        chip8.soundTimer--;
+      renderScreen(&chip8, renderer);
+      lastTimeTimer = currentTime;
     }
   }
 
